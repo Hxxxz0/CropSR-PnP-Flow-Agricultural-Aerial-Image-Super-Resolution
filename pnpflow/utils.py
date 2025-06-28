@@ -169,14 +169,33 @@ def merge_cfg_from_list(cfg: CfgNode,
 
 def define_model(args):
     if args.model == "ot" or args.model == "gradient_step":
-        model = UNet(input_channels=args.num_channels,
-                     input_height=args.dim_image,
-                     ch=32,
-                     ch_mult=(1, 2, 4, 8),
-                     num_res_blocks=6,
-                     attn_resolutions=(16, 8),
-                     resamp_with_conv=True,
-                     )
+        # 针对512x512图像优化UNet配置
+        if args.dim_image == 512:
+            # model = UNet(input_channels=args.num_channels,
+            #              input_height=args.dim_image,
+            #              ch=64,  # 增加基础通道数以处理更大图像
+            #              ch_mult=(1, 2, 4, 8),
+            #              num_res_blocks=4,  # 减少残差块数量以节省显存
+            #              attn_resolutions=(32, 16),  # 调整注意力分辨率
+            #              resamp_with_conv=True,
+            #              )
+            model = UNet(input_channels=args.num_channels,
+                         input_height=args.dim_image,
+                         ch=32,
+                         ch_mult=(1, 2, 4, 8),
+                         num_res_blocks=6,
+                         attn_resolutions=(16, 8),
+                         resamp_with_conv=True,
+                         )
+        else:
+            model = UNet(input_channels=args.num_channels,
+                         input_height=args.dim_image,
+                         ch=32,
+                         ch_mult=(1, 2, 4, 8),
+                         num_res_blocks=6,
+                         attn_resolutions=(16, 8),
+                         resamp_with_conv=True,
+                         )
         return (model, None)
 
     elif args.model == "diffusion":

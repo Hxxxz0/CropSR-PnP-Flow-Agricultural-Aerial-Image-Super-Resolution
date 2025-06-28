@@ -1,0 +1,4 @@
+DATASET:
+    dim_image: 512        # HR图像尺寸512x512，实现真正的2倍超分辨率
+    num_channels: 3       # RGB三通道
+    lr_size: 256         # LR图像尺寸为256x256 

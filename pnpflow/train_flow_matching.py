@@ -20,10 +20,13 @@ import numpy as np
 from matplotlib import pyplot as plt
 import ot
 from torchdiffeq import odeint_adjoint as odeint
-from pnpflow.models import InceptionV3
-import pnpflow.fid_score as fs
 from pnpflow.dataloaders import DataLoaders
 import pnpflow.utils as utils
+from pnpflow.models import InceptionV3
+import pnpflow.fid_score as fs
+
+
+
 
 
 class FLOW_MATCHING(object):
@@ -34,7 +37,7 @@ class FLOW_MATCHING(object):
         self.device = device
         self.args = args
         self.lr = args.lr
-        self.model = model.to(device)
+        self.model = model  # 模型已经在main.py中移动到device并包装DataParallel
 
     def train_FM_model(self, train_loader, opt, num_epoch):
         tq = tqdm(range(num_epoch), desc='loss')
@@ -49,7 +52,7 @@ class FLOW_MATCHING(object):
                     self.d,
                     self.d,
                     device=self.device,
-                    requires_grad=True)
+                    requires_grad=False)
 
                 t1 = torch.rand(x.shape[0], 1, 1, 1, device=self.device)
 
@@ -69,8 +72,15 @@ class FLOW_MATCHING(object):
                 x0 = x0[i]
                 x1 = x1[j]
                 xt = t1 * x1 + (1 - t1) * x0
-                loss = torch.sum(
-                    (self.model(xt, t1.squeeze()) - (x1 - x0))**2) / x.shape[0]
+                # 使用像素平均的 MSE 以保证 loss 数值稳定 (≈0~5)
+                # 确保时间步的维度正确
+                t_input = t1.squeeze()
+                if len(t_input.shape) == 0:  # 如果是标量，扩展为1D
+                    t_input = t_input.unsqueeze(0)
+                elif len(t_input.shape) > 1:  # 如果维度过多，压缩
+                    t_input = t_input.view(-1)
+                mse = (self.model(xt, t_input) - (x1 - x0))**2
+                loss = mse.view(x.shape[0], -1).mean()  # mean over batch 和像素
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
@@ -84,12 +94,13 @@ class FLOW_MATCHING(object):
             self.sample_plot(x, ep)
             if ep % 5 == 0:
                 # save model
-                torch.save(self.model.state_dict(),
-                           self.model_path + 'model_{}.pt'.format(ep))
-                # evaluate FID
-                fid_value = self.compute_fast_fid(2048)
-                with open(self.save_path + 'fid.txt', 'a') as file:
-                    file.write(f'Epoch: {ep}, FID: {fid_value}\n')
+                model_state = self.model.module.state_dict() if hasattr(self.model, 'module') else self.model.state_dict()
+                torch.save(model_state, self.model_path + 'model_{}.pt'.format(ep))
+                # NOTE: 已请求停止PSNR评估，避免额外显存占用
+                # 若需恢复，请取消以下注释并调整 num_samples 等参数
+                # psnr_value = self.compute_psnr(64)
+                # with open(self.save_path + 'psnr.txt', 'a') as file:
+                #     file.write(f'Epoch: {ep}, PSNR: {psnr_value:.4f}\n')
 
     def apply_flow_matching(self, NO_samples):
         self.model.eval()
@@ -129,6 +140,32 @@ class FLOW_MATCHING(object):
             utils.save_samples(gt.detach().cpu(), gt.detach().cpu(), self.save_path + 'results_samplings/' +
                                'train_samples_ep_{}.pdf'.format(ep), self.args)
 
+    def compute_psnr(self, num_samples):
+        """计算生成样本与真实样本的PSNR"""
+        import torch.nn.functional as F
+        
+        # 获取真实样本
+        data_v = next(iter(self.full_train_set))
+        gt = data_v[0].to(self.device)[:num_samples]
+        
+        # 生成样本
+        generated = self.apply_flow_matching(num_samples)
+        
+        # 确保数据范围在[0,1]
+        gt_normalized = utils.postprocess(gt, self.args)
+        gen_normalized = utils.postprocess(generated, self.args)
+        
+        # 计算MSE
+        mse = F.mse_loss(gen_normalized, gt_normalized)
+        
+        # 计算PSNR (Peak Signal-to-Noise Ratio)
+        if mse == 0:
+            psnr = float('inf')
+        else:
+            psnr = 20 * torch.log10(1.0 / torch.sqrt(mse))
+        
+        return psnr.item()
+    
     def compute_fast_fid(self, num_samples):
         block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[2048]
         model = InceptionV3([block_idx]).to(self.device)
@@ -177,8 +214,8 @@ class FLOW_MATCHING(object):
         # load model
         train_loader = data_loaders['train']
 
-        # load full dataset on cpu to evaluate FID
-        full_data = DataLoaders(self.args.dataset, 2048, 2048)
+        # load full dataset on cpu to evaluate PSNR
+        full_data = DataLoaders(self.args.dataset, 64, 64)  # 减少样本数量，只用于PSNR计算
         self.full_train_set = full_data.load_data()['train']
 
         # create txt file for storing all information about model
@@ -195,7 +232,8 @@ class FLOW_MATCHING(object):
         self.train_FM_model(train_loader, opt, num_epoch=self.args.num_epoch)
 
         # save final model
-        torch.save(self.model.state_dict(), self.model_path + 'model_final.pt')
+        model_state = self.model.module.state_dict() if hasattr(self.model, 'module') else self.model.state_dict()
+        torch.save(model_state, self.model_path + 'model_final.pt')
 
 
 class cnf(torch.nn.Module):

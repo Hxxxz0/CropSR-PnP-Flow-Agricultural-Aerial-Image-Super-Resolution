@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore", module="matplotlib\\..*")
 
 torch.cuda.empty_cache()
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '6,7'
 
 
 def parse_args() -> argparse.Namespace:
@@ -68,6 +68,12 @@ def main():
         cudnn.deterministic = True
 
     (model, state) = define_model(args)
+    
+    # 多GPU支持
+    if torch.cuda.device_count() > 1:
+        print(f"使用 {torch.cuda.device_count()} 个GPU进行训练")
+        model = torch.nn.DataParallel(model)
+    model = model.to(device)
 
     if args.train:
         args.batch_size = args.batch_size_train
@@ -157,6 +163,12 @@ def main():
             elif args.dim_image == 256:
                 print('Superresolution with scale factor 4')
                 sf = 4
+            elif args.dim_image == 512:
+                print('Superresolution with scale factor 2 (512->256)')
+                sf = 2
+            else:
+                print(f'Superresolution with scale factor 2 for image size {args.dim_image}')
+                sf = 2
             if args.noise_type == 'laplace':
                 sigma_noise = 0.3
 

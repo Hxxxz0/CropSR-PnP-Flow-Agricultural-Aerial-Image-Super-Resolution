@@ -22,7 +22,7 @@ def get_activations(images, model, batch_size=50, dims=2048, device='cpu'):
     """Calculates the activations of the pool_3 layer for all images.
 
     Params:
-    -- images      : Images
+    -- images      : PyTorch Tensor of images
     -- model       : Instance of inception model
     -- batch_size  : Batch size of images for the model to process at once.
                      Make sure that the number of samples is a multiple of
@@ -45,9 +45,9 @@ def get_activations(images, model, batch_size=50, dims=2048, device='cpu'):
         batch_size = len(images)
 
     dl = torch.utils.data.DataLoader(images, batch_size=batch_size,
-                                     drop_last=False)
+                                     drop_last=False, pin_memory=True)
 
-    pred_arr = np.empty((len(images), dims))
+    pred_arr = torch.empty((len(images), dims), device=device)
 
     start_idx = 0
 
@@ -62,13 +62,44 @@ def get_activations(images, model, batch_size=50, dims=2048, device='cpu'):
         if pred.size(2) != 1 or pred.size(3) != 1:
             pred = adaptive_avg_pool2d(pred, output_size=(1, 1))
 
-        pred = pred.squeeze(3).squeeze(2).cpu().numpy()
+        pred = pred.squeeze(3).squeeze(2)
 
         pred_arr[start_idx:start_idx + pred.shape[0]] = pred
 
         start_idx = start_idx + pred.shape[0]
 
     return pred_arr
+
+
+def torch_cov(m, rowvar=False):
+    '''Estimate a covariance matrix given data.
+
+    Covariance indicates the level to which two variables vary together.
+    If we have two series of observations from the same population,
+    then the covariance between them indicates how aligned they are.
+    For the purposes of this function, we estimate the sample covariance matrix.
+    Args:
+        m: A 1-D or 2-D array containing multiple variables and observations.
+            Each row of `m` represents a variable, and each column a single
+            observation of all variables.
+        rowvar: If `rowvar` is True, then each row represents a
+            variable, with observations in the columns. Otherwise, the
+            relationship is transposed: each column represents a variable,
+            while the rows contain observations.
+    Returns:
+        The covariance matrix of the variables.
+    '''
+    if m.dim() > 2:
+        raise ValueError('m has more than 2 dimensions')
+    if m.dim() < 2:
+        m = m.view(1, -1)
+    if not rowvar and m.size(0) != 1:
+        m = m.t()
+    # m = m.type(torch.double)  # uncomment this line if torchbmm causes errors
+    fact = 1.0 / (m.size(1) - 1)
+    m -= torch.mean(m, dim=1, keepdim=True)
+    mt = m.t()
+    return fact * m.matmul(mt).squeeze()
 
 
 def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
@@ -92,12 +123,6 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     Returns:
     --   : The Frechet Distance.
     """
-
-    mu1 = np.atleast_1d(mu1)
-    mu2 = np.atleast_1d(mu2)
-
-    sigma1 = np.atleast_2d(sigma1)
-    sigma2 = np.atleast_2d(sigma2)
 
     assert mu1.shape == mu2.shape, \
         'Training and test mean vectors have different lengths'
@@ -136,7 +161,7 @@ def calculate_activation_statistics(
         device='cpu'):
     """Calculation of the statistics used by the FID.
     Params:
-    -- images      : Images
+    -- images      : PyTorch Tensor of images
     -- model       : Instance of inception model
     -- batch_size  : The images numpy array is split into batches with
                      batch size batch_size. A reasonable batch size
@@ -151,47 +176,49 @@ def calculate_activation_statistics(
                the inception model.
     """
     act = get_activations(images, model, batch_size, dims, device)
-    mu = np.mean(act, axis=0)
-    sigma = np.cov(act, rowvar=False)
+    mu = torch.mean(act, dim=0)
+    sigma = torch_cov(act, rowvar=False)
     return mu, sigma
 
 
-def evaluate_fid_score(images1, images2, batch_size=50):
+def evaluate_fid_score(images1, images2, batch_size=50, device='cpu'):
     """Calculation of FID.
     Params:
-    -- images1/2   : Images of shape (N, H, W, C)
+    -- images1/2   : PyTorch Tensor of images of shape (N, C, H, W)
     -- batch_size  : The images numpy array is split into batches with
                      batch size batch_size. A reasonable batch size
                      depends on the hardware.
+    -- device      : Device to run calculations
 
     Returns:
     -- fid_value   : The FID score.
     """
 
-    device = torch.device('cuda' if (torch.cuda.is_available()) else 'cpu')
-
     block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[2048]
 
     model = InceptionV3([block_idx]).to(device)
+    model.eval()
 
     if images1.shape[-1] == 1:
-        images1 = np.concatenate([images1, images1, images1], axis=-1)
+        images1 = torch.cat([images1, images1, images1], dim=1)
     if images2.shape[-1] == 1:
-        images2 = np.concatenate([images2, images2, images2], axis=-1)
+        images2 = torch.cat([images2, images2, images2], dim=1)
 
-    if np.max(images1) > 1 or np.min(images1) < 0 or np.max(
-            images2) > 1 or np.min(images2) < 0:
+    if torch.max(images1) > 1 or torch.min(images1) < 0 or torch.max(
+            images2) > 1 or torch.min(images2) < 0:
         import warnings
         warnings.warn(
             'FID score: the values of images should be in range [0,1].')
-
-    images1 = np.transpose(images1, axes=(0, 3, 1, 2))
-    images2 = np.transpose(images2, axes=(0, 3, 1, 2))
 
     m1, s1 = calculate_activation_statistics(
         images1, model, batch_size, 2048, device)
     m2, s2 = calculate_activation_statistics(
         images2, model, batch_size, 2048, device)
+
+    # Move to cpu for numpy calculations
+    m1, s1 = m1.cpu().numpy(), s1.cpu().numpy()
+    m2, s2 = m2.cpu().numpy(), s2.cpu().numpy()
+
     fid_value = calculate_frechet_distance(m1, s1, m2, s2)
 
     return fid_value
