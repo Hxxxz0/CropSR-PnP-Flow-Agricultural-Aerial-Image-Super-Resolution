@@ -343,16 +343,20 @@ def gaussian_blur(x, sigma_blur, size_kernel):
     return F.conv2d(x, kernel, stride=1, padding='same', groups=x.shape[1])
 
 
-def square_mask(x, half_size_mask):
+def square_mask(x, half_size_mask, intensity=-1.0):
     """
-    Black square mask of 20 x 20 pixels at the center of the image
+    Creates a square mask at the center of the image and fills it with a given intensity.
+    The mask value is 1 for observed pixels and 0 for the hole.
     """
     d = x.shape[2] // 2
-
+    
+    # Create a mask tensor: 1 for observed, 0 for the hole
     mask = torch.ones_like(x)
     mask[:, :, d - half_size_mask:d + half_size_mask,
          d - half_size_mask:d + half_size_mask] = 0
-    return mask * x
+         
+    # Apply the mask: keep original pixels where mask is 1, fill with intensity where mask is 0
+    return x * mask + intensity * (1 - mask)
 
 
 def paintbrush_mask(x):

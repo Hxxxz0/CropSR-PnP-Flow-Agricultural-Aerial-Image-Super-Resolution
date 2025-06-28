@@ -148,4 +148,4 @@ def main():
     print("  4. 比较不同遮挡类型（黑色 vs 灰色）的恢复差异")
 
 if __name__ == "__main__":
-    main() 
+    main()

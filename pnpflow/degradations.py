@@ -21,15 +21,17 @@ class Denoising(Degradation):
 
 
 class BoxInpainting(Degradation):
-    def __init__(self, half_size_mask):
+    def __init__(self, half_size_mask, intensity=-1.0):
         super().__init__()
         self.half_size_mask = half_size_mask
+        self.intensity = intensity
 
     def H(self, x):
-        return square_mask(x, self.half_size_mask)
+        return square_mask(x, self.half_size_mask, self.intensity)
 
     def H_adj(self, x):
-        return square_mask(x, self.half_size_mask)
+        # The adjoint is the same as the forward operator for inpainting
+        return square_mask(x, self.half_size_mask, self.intensity)
 
 
 class RandomInpainting(Degradation):

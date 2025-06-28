@@ -180,7 +180,7 @@ def create_occluded_lr_images(hr_images, degradation, sigma_noise, device, seed=
         min_size = degradation.occlusion_params['min_size']
         max_size = degradation.occlusion_params['max_size']
         intensity = degradation.occlusion_params['intensity']
-
+        
         # 手动添加遮挡并同步更新掩码
         occluded_hr = hr_single.clone()
         _, _, H, W = hr_single.shape
@@ -189,18 +189,18 @@ def create_occluded_lr_images(hr_images, degradation, sigma_noise, device, seed=
             block_h = random.randint(min_size, min(max_size, H))
             start_x = random.randint(0, W - block_w)
             start_y = random.randint(0, H - block_h)
-
+            
             occluded_hr[:, :, start_y:start_y+block_h, start_x:start_x+block_w] = intensity
             mask_hr[:, :, start_y:start_y+block_h, start_x:start_x+block_w] = 0.0
-
+        
         # HR->LR 降采样
         lr_single = F.interpolate(occluded_hr, scale_factor=1/degradation.sf, mode='bilinear', align_corners=False)
         lr_mask_single = F.interpolate(mask_hr, scale_factor=1/degradation.sf, mode='nearest')
-
+        
         # 添加噪声
         if sigma_noise > 0:
             lr_single += torch.randn_like(lr_single) * sigma_noise
-
+        
         lr_images.append(lr_single.cpu())
         occluded_hr_images.append(occluded_hr.cpu())
         lr_masks.append(lr_mask_single.cpu())
@@ -374,33 +374,31 @@ def calculate_baseline_metrics(hr_images, lr_images, cfg):
     return psnr.item(), ssim.item(), bicubic_upsampled
 
 def run_pnp_flow_occlusion_test(model, cfg, device, num_samples=8, save_dir="./test_results_occlusion", 
-                                occlusion_params=None, scale_factor=None):
+                                occlusion_params=None):
     """运行PnP-Flow遮挡超分辨率测试"""
     print("=== 开始PnP-Flow遮挡超分辨率测试 ===")
     
     # 创建参数对象
     args = Args(cfg)
     args.save_path = save_dir
-    
     # 调整关键超参数以增强先验作用
     args.steps_pnp = 250
     args.num_samples = 8
     args.lr_pnp = 1.0
     
-    # 根据输入参数或cfg确定超分辨率倍数
-    if scale_factor is not None:
-        sf = int(scale_factor)
-        print(f'Superresolution with scale factor {sf} (由参数指定)')
+    # 按照main.py中的设置确定超分辨率倍数
+    if cfg.dim_image == 128:
+        sf = 2
+        print('Superresolution with scale factor 2')
+    elif cfg.dim_image == 256:
+        sf = 4
+        print('Superresolution with scale factor 4')
+    elif cfg.dim_image == 512:
+        sf = 2  # 对于512维图像，我们测试2x超分辨率
+        print('Superresolution with scale factor 2 (512->256->512)')
     else:
-        if cfg.dim_image == 128:
-            sf = 2
-        elif cfg.dim_image == 256:
-            sf = 4
-        elif cfg.dim_image == 512:
-            sf = 2
-        else:
-            sf = 2
-        print(f'Superresolution with scale factor {sf} (根据cfg.dim_image={cfg.dim_image})')
+        sf = 2  # 默认2x
+        print(f'Superresolution with scale factor 2 (default for dim_image={cfg.dim_image})')
     
     # 设置遮挡参数
     if occlusion_params is None:
@@ -468,19 +466,16 @@ def run_pnp_flow_occlusion_test(model, cfg, device, num_samples=8, save_dir="./t
         for batch in range(min(args.max_batch, len(hr_images))):
             (clean_img, _) = next(loader)
             
-            # 使用预先创建的LR图像
             noisy_img = lr_images[batch:batch+1].to(device)
-            mask_lr = lr_masks[batch:batch+1].to(device)  # LR分辨率掩码
-            # 上采样到HR分辨率（nearest保留0/1）
-            mask_hr = F.interpolate(mask_lr, scale_factor=sf, mode='nearest')
+            mask = lr_masks[batch:batch+1].to(device)
             clean_img = clean_img.to('cpu')
             
             print(f"\n处理第 {batch+1}/{min(args.max_batch, len(hr_images))} 张图像")
             print(f"LR输入形状: {noisy_img.shape}, 值域: [{noisy_img.min():.3f}, {noisy_img.max():.3f}]")
             print(f"算法参数: steps={steps}, lr={lr}, num_samples={num_samples_pnp}")
             
-            # 初始化：使用nearest上采样以减少黑框纹理
-            x = F.interpolate(noisy_img, scale_factor=sf, mode='nearest').to(device)
+            # 初始化：使用标准的H_adj
+            x = H_adj(noisy_img).to(device)
             print(f"初始化形状: {x.shape}, 值域: [{x.min():.3f}, {x.max():.3f}]")
             
             # PnP-Flow迭代
@@ -489,12 +484,12 @@ def run_pnp_flow_occlusion_test(model, cfg, device, num_samples=8, save_dir="./t
                     t1 = torch.ones(len(x), device=device) * delta * iteration
                     lr_t = pnp_solver.learning_rate_strat(lr, t1)
                     
-                    # LR残差
+                    # 仅在非遮挡像素计算梯度
                     residual = H(x) - noisy_img
-                    residual_hr = H_adj(residual)  # HR梯度
-                    residual_hr = residual_hr * mask_hr  # 仅对未遮挡像素保真
-                    z = x - lr_t * residual_hr / (sigma_noise**2)
+                    residual = residual * mask  # 忽略遮挡像素
+                    z = x - lr_t * H_adj(residual) / (sigma_noise**2)
                     
+                    # 先验项（使用Flow Matching模型）
                     x_new = torch.zeros_like(x)
                     for _ in range(num_samples_pnp):
                         z_tilde = pnp_solver.interpolation_step(z, t1.view(-1, 1, 1, 1))
@@ -546,8 +541,6 @@ def main():
                        help='遮挡方块最大尺寸')
     parser.add_argument('--intensity', type=float, default=0.0,
                        help='遮挡强度 (0.0=黑色, 1.0=白色, 0.5=灰色)')
-    parser.add_argument('--scale_factor', type=float, default=2.0,
-                       help='超分辨率倍数')
     args = parser.parse_args()
     
     try:
@@ -576,8 +569,7 @@ def main():
             model, cfg, device, 
             num_samples=args.num_samples,
             save_dir="./test_results_occlusion",
-            occlusion_params=occlusion_params,
-            scale_factor=args.scale_factor
+            occlusion_params=occlusion_params
         )
         
         # 计算双三次插值基线指标
@@ -596,7 +588,7 @@ def main():
         print("农业航拍图像带遮挡2倍超分辨率效果对比")
         print("="*70)
         print(f"测试样本数量: {len(hr_images)}")
-        print(f"超分辨率倍数: {args.scale_factor}x ({lr_images.shape[-2:][0]}×{lr_images.shape[-2:][1]} → {hr_images.shape[-2:][0]}×{hr_images.shape[-2:][1]})")
+        print(f"超分辨率倍数: 2x ({lr_images.shape[-2:][0]}×{lr_images.shape[-2:][1]} → {hr_images.shape[-2:][0]}×{hr_images.shape[-2:][1]})")
         print(f"数据集: CropSR农业航拍图像")
         print(f"遮挡参数: {occlusion_params}")
         print("-" * 70)
@@ -651,4 +643,4 @@ def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    main() 
+    main()
