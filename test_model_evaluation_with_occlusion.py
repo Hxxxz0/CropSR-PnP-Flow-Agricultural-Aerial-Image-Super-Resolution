@@ -382,7 +382,7 @@ def run_pnp_flow_occlusion_test(model, cfg, device, num_samples=8, save_dir="./t
     args = Args(cfg)
     args.save_path = save_dir
     # 调整关键超参数以增强先验作用
-    args.steps_pnp = 150
+    args.steps_pnp = 50
     args.num_samples = 3
     args.lr_pnp = 1.0
     
@@ -463,16 +463,15 @@ def run_pnp_flow_occlusion_test(model, cfg, device, num_samples=8, save_dir="./t
             raise ValueError('Noise type not supported')
         
         loader = iter(test_loader)
-        for batch in range(min(args.max_batch, len(hr_images))):
+        for batch in range(len(hr_images)):
             (clean_img, _) = next(loader)
             
             noisy_img = lr_images[batch:batch+1].to(device)
             mask = lr_masks[batch:batch+1].to(device)
             clean_img = clean_img.to('cpu')
             
-            print(f"\n处理第 {batch+1}/{min(args.max_batch, len(hr_images))} 张图像")
+            print(f"\n处理第 {batch+1}/{len(hr_images)} 张图像")
             print(f"LR输入形状: {noisy_img.shape}, 值域: [{noisy_img.min():.3f}, {noisy_img.max():.3f}]")
-            print(f"算法参数: steps={steps}, lr={lr}, num_samples={num_samples_pnp}")
             
             # 初始化：使用标准的H_adj
             x = H_adj(noisy_img).to(device)
@@ -529,7 +528,7 @@ def main():
     parser = argparse.ArgumentParser(description='PnP-Flow带遮挡超分辨率测试')
     parser.add_argument('--model_path', type=str, default='./model/cropsr/ot/model_85.pt',
                        help='模型路径')
-    parser.add_argument('--num_samples', type=int, default=8,
+    parser.add_argument('--num_samples', type=int, default=32,
                        help='测试样本数量')
     parser.add_argument('--save_images', action='store_true', default=True,
                        help='保存样本图像')
