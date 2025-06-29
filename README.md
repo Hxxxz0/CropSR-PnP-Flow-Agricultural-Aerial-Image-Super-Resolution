@@ -70,6 +70,66 @@
 | 双三次插值 (基线) | 18.38 | 0.3531 | - |
 | **PnP-Flow (本方法)** | **20.53** | **0.4939** | **+2.15 dB (+11.69%)**<br/>**+0.1408 (+39.88%)** |
 
+## 🎨 视觉效果对比
+
+### 4x超分辨率效果展示
+
+以下展示了PnP-Flow在农业航拍图像4x超分辨率任务中的视觉效果：
+
+<table>
+  <tr>
+    <td align="center"><b>低分辨率输入 (128×128)</b></td>
+    <td align="center"><b>双三次插值 (512×512)</b></td>
+  </tr>
+  <tr>
+    <td><img src="images/example1_LR_Input.png" width="256"/></td>
+    <td><img src="images/example1_Bicubic.png" width="256"/></td>
+  </tr>
+  <tr>
+    <td align="center"><b>PnP-Flow恢复 (512×512)</b></td>
+    <td align="center"><b>真实高分辨率 (512×512)</b></td>
+  </tr>
+  <tr>
+    <td><img src="images/example1_PnPFlow.png" width="256"/></td>
+    <td><img src="images/example1_HR_GT.png" width="256"/></td>
+  </tr>
+</table>
+
+**对比分析**：
+- 🔍 **细节恢复**：PnP-Flow恢复的图像在作物纹理、田块边界等细节方面明显优于双三次插值
+- 🌾 **农业特征**：植被结构、土壤纹理等农业特有元素得到更好保持
+- 📏 **边缘清晰度**：田地分界线、道路轮廓更加清晰锐利
+
+### 遮挡恢复效果展示
+
+以下展示了PnP-Flow在带遮挡的农业图像恢复任务中的强大能力：
+
+<table>
+  <tr>
+    <td align="center"><b>原始高分辨率</b></td>
+    <td align="center"><b>添加遮挡后</b></td>
+  </tr>
+  <tr>
+    <td><img src="images/occlusion_example_HR_GT.png" width="256"/></td>
+    <td><img src="images/occlusion_example_HR_Occluded.png" width="256"/></td>
+  </tr>
+  <tr>
+    <td align="center"><b>降采样输入</b></td>
+    <td align="center"><b>PnP-Flow恢复结果</b></td>
+  </tr>
+  <tr>
+    <td><img src="images/occlusion_example_LR_Input.png" width="256"/></td>
+    <td><img src="images/occlusion_example_PnPFlow.png" width="256"/></td>
+  </tr>
+</table>
+
+**恢复效果分析**：
+- 🔧 **遮挡修复**：成功去除了黑色方块遮挡，恢复了被遮挡区域的农业细节
+- 🎯 **内容一致性**：恢复区域与周围内容保持高度一致，无明显痕迹
+- 💪 **鲁棒性**：展现了方法在复杂真实场景下的强大适应能力
+
+---
+
 ## 🚀 快速开始
 
 ### 1.1 环境要求
