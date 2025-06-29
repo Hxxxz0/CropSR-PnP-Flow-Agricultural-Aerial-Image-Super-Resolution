@@ -38,7 +38,7 @@ class SimpleSuperresolution:
 
 class Args:
     """配置类，模拟argparse参数"""
-    def __init__(self, cfg):
+    def __init__(self, cfg, num_samples=8):
         # 从配置文件复制基本参数
         for key, value in cfg.items():
             setattr(self, key, value)
@@ -48,16 +48,23 @@ class Args:
         self.problem = 'superresolution'
         self.noise_type = 'gaussian'
         self.sigma_noise = 0.05
-        self.max_batch = 8  # 测试样本数量
+        self.max_batch = num_samples  # 使用传入的样本数量
         self.batch_size_ip = 1  # 每次处理一张图像
         self.eval_split = 'test'
         
-        # PnP-Flow算法参数
-        self.steps_pnp = 100  # PnP迭代步数
-        self.lr_pnp = 1.0     # 学习率
+        # PnP-Flow算法参数 4x
+        self.steps_pnp = 200  # PnP迭代步数
+        self.lr_pnp = 1.5     # 学习率
         self.num_samples = 3   # 每步采样数量（增加采样提高稳定性）
         self.gamma_style = 'constant'  # 学习率策略
         self.alpha = 1.0
+
+        # PnP-Flow算法参数 8x
+        # self.steps_pnp = 150  # PnP迭代步数
+        # self.lr_pnp = 2.0     # 学习率
+        # self.num_samples = 8   # 每步采样数量（增加采样提高稳定性）
+        # self.gamma_style = 'constant'  # 学习率策略
+        # self.alpha = 1.0
         
         # 保存和计算选项
         self.save_results = True
@@ -328,7 +335,7 @@ def run_pnp_flow_test(model, cfg, device, num_samples=8, save_dir="./test_result
     print("=== 开始PnP-Flow超分辨率测试 ===")
     
     # 创建参数对象
-    args = Args(cfg)
+    args = Args(cfg, num_samples)
     args.save_path = save_dir
     
     # 设置超分辨率倍数
@@ -477,9 +484,9 @@ def run_pnp_flow_test(model, cfg, device, num_samples=8, save_dir="./test_result
 
 def main():
     parser = argparse.ArgumentParser(description='PnP-Flow超分辨率测试')
-    parser.add_argument('--model_path', type=str, default='./model/cropsr/ot/model_5.pt',
+    parser.add_argument('--model_path', type=str, default='./model/cropsr/ot/model_85.pt',
                        help='模型路径')
-    parser.add_argument('--num_samples', type=int, default=8,
+    parser.add_argument('--num_samples', type=int, default=4,
                        help='测试样本数量')
     parser.add_argument('--save_images', action='store_true', default=True,
                        help='保存样本图像')
@@ -516,6 +523,11 @@ def main():
             hr_data_path=args.hr_data_path,
             start_idx=args.start_idx
         )
+        
+        # 确保用于评估的图像数量一致
+        num_restored = len(restored_images)
+        hr_images = hr_images[:num_restored]
+        lr_images = lr_images[:num_restored]
         
         # 计算双三次插值基线指标
         baseline_psnr, baseline_ssim, bicubic_images = calculate_baseline_metrics(hr_images, lr_images, cfg)

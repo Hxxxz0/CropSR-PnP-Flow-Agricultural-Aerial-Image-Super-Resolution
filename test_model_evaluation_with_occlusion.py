@@ -99,11 +99,11 @@ class Args:
                 setattr(self, key, value)
         except FileNotFoundError:
             print(f"警告: 未找到方法配置文件 {method_config_file}，使用默认参数")
-            # 默认PnP-Flow算法参数
-            self.steps_pnp = 100
-            self.lr_pnp = 1.0
+                        # 默认PnP-Flow算法参数
+            self.steps_pnp = 200
+            self.lr_pnp = 1.5
             self.num_samples = 3
-            self.gamma_style = 'constant'
+            self.gamma_style = 'alpha_1_minus_t'
             self.alpha = 1.0
         
         # 保存和计算选项
@@ -382,8 +382,8 @@ def run_pnp_flow_occlusion_test(model, cfg, device, num_samples=8, save_dir="./t
     args = Args(cfg)
     args.save_path = save_dir
     # 调整关键超参数以增强先验作用
-    args.steps_pnp = 250
-    args.num_samples = 8
+    args.steps_pnp = 100
+    args.num_samples = 3
     args.lr_pnp = 1.0
     
     # 按照main.py中的设置确定超分辨率倍数
@@ -527,7 +527,7 @@ def run_pnp_flow_occlusion_test(model, cfg, device, num_samples=8, save_dir="./t
 
 def main():
     parser = argparse.ArgumentParser(description='PnP-Flow带遮挡超分辨率测试')
-    parser.add_argument('--model_path', type=str, default='./model/cropsr/ot/model_5.pt',
+    parser.add_argument('--model_path', type=str, default='./model/cropsr/ot/model_85.pt',
                        help='模型路径')
     parser.add_argument('--num_samples', type=int, default=8,
                        help='测试样本数量')
