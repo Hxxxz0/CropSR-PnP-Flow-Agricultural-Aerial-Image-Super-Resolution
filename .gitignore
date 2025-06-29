@@ -18,3 +18,12 @@ demo/iter*.png
 *.pt
 
 build/
+
+# Test results
+test_results/
+test_results_occlusion/
+quick_param_test/
+
+# Log files
+*.log
+nohup.out

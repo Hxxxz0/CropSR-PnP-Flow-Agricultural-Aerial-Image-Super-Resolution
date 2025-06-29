@@ -382,7 +382,7 @@ def run_pnp_flow_occlusion_test(model, cfg, device, num_samples=8, save_dir="./t
     args = Args(cfg)
     args.save_path = save_dir
     # 调整关键超参数以增强先验作用
-    args.steps_pnp = 100
+    args.steps_pnp = 150
     args.num_samples = 3
     args.lr_pnp = 1.0
     
